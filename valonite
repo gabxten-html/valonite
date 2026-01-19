@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>FPS Prototype Advanced</title>
+<style>
+body { margin:0; overflow:hidden; background:#000 }
+canvas { display:block }
+#hud {
+  position:fixed; top:10px; left:10px;
+  color:white; font-family:Arial; font-size:14px;
+}
+#crosshair {
+  position:fixed;
+  top:50%; left:50%;
+  width:10px; height:10px;
+  border:2px solid white;
+  border-radius:50%;
+  transform:translate(-50%,-50%);
+}
+#minimap {
+  position:fixed;
+  bottom:10px; right:10px;
+  border:2px solid white;
+}
+</style>
+</head>
+<body>
+
+<div id="hud">
+Arme : <span id="weapon">Pistolet</span><br>
+1-2-3 changer | ZQSD bouger | clic tirer
+</div>
+<div id="crosshair"></div>
+<canvas id="game"></canvas>
+<canvas id="minimap" width="150" height="150"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+const mini = document.getElementById("minimap");
+const mctx = mini.getContext("2d");
+
+const tile = 80;
+const map = [
+[1,1,1,1,1,1,1,1,1,1],
+[1,0,0,0,0,0,0,0,0,1],
+[1,0,1,0,1,0,1,0,0,1],
+[1,0,0,0,0,0,0,0,0,1],
+[1,0,1,1,1,0,1,1,0,1],
+[1,0,0,0,0,0,0,0,0,1],
+[1,1,1,1,1,1,1,1,1,1]
+];
+
+let player = {
+  x: tile*2, y: tile*2,
+  angle: 0, speed: 4, radius: 15
+};
+
+const weapons = {
+ pistol:{name:"Pistolet",rate:350,spread:0.02,bullets:1,speed:10},
+ rifle:{name:"Rifle",rate:120,spread:0.06,bullets:1,speed:12},
+ shotgun:{name:"Shotgun",rate:800,spread:0.4,bullets:6,speed:9}
+};
+let weapon = weapons.pistol;
+let lastShot = 0;
+
+let enemies = [
+ {x: tile*6, y: tile*3, hp: 3},
+ {x: tile*7, y: tile*5, hp: 3}
+];
+
+let bullets = [];
+let keys = {};
+
+document.addEventListener("keydown",e=>{
+ keys[e.key]=true;
+ if(e.key==="1") setWeapon("pistol");
+ if(e.key==="2") setWeapon("rifle");
+ if(e.key==="3") setWeapon("shotgun");
+});
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+canvas.onclick=()=>canvas.requestPointerLock();
+document.addEventListener("mousemove",e=>{
+ if(document.pointerLockElement===canvas){
+  player.angle+=e.movementX*0.002;
+ }
+});
+
+document.addEventListener("mousedown",shoot);
+
+function setWeapon(w){
+ weapon=weapons[w];
+ document.getElementById("weapon").innerText=weapon.name;
+}
+
+function wall(x,y){
+ const c=Math.floor(x/tile);
+ const r=Math.floor(y/tile);
+ return map[r] && map[r][c]===1;
+}
+
+function shoot(){
+ const now=Date.now();
+ if(now-lastShot<weapon.rate)return;
+ lastShot=now;
+
+ for(let i=0;i<weapon.bullets;i++){
+  const a=player.angle+(Math.random()-0.5)*weapon.spread;
+  bullets.push({
+   x:player.x,y:player.y,
+   dx:Math.cos(a)*weapon.speed,
+   dy:Math.sin(a)*weapon.speed
+  });
+ }
+}
+
+function update(){
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ let nx=player.x, ny=player.y;
+ if(keys["z"]){nx+=Math.cos(player.angle)*player.speed; ny+=Math.sin(player.angle)*player.speed;}
+ if(keys["s"]){nx-=Math.cos(player.angle)*player.speed; ny-=Math.sin(player.angle)*player.speed;}
+ if(keys["q"]){nx+=Math.cos(player.angle-Math.PI/2)*player.speed; ny+=Math.sin(player.angle-Math.PI/2)*player.speed;}
+ if(keys["d"]){nx+=Math.cos(player.angle+Math.PI/2)*player.speed; ny+=Math.sin(player.angle+Math.PI/2)*player.speed;}
+
+ if(!wall(nx,player.y))player.x=nx;
+ if(!wall(player.x,ny))player.y=ny;
+
+ // MAP
+ for(let r=0;r<map.length;r++){
+  for(let c=0;c<map[r].length;c++){
+   if(map[r][c]){
+    ctx.fillStyle="#555";
+    ctx.fillRect(
+     c*tile-player.x+canvas.width/2,
+     r*tile-player.y+canvas.height/2,
+     tile,tile
+    );
+   }
+  }
+ }
+
+ // ENEMIES
+ enemies=enemies.filter(e=>{
+  ctx.fillStyle="red";
+  ctx.fillRect(
+   e.x-player.x+canvas.width/2-10,
+   e.y-player.y+canvas.height/2-10,
+   20,20
+  );
+  return e.hp>0;
+ });
+
+ // BULLETS
+ bullets=bullets.filter(b=>{
+  b.x+=b.dx; b.y+=b.dy;
+  if(wall(b.x,b.y))return false;
+
+  enemies.forEach(e=>{
+   if(Math.hypot(b.x-e.x,b.y-e.y)<20){
+    e.hp--; b.dead=true;
+   }
+  });
+
+  ctx.fillStyle="yellow";
+  ctx.fillRect(
+   b.x-player.x+canvas.width/2,
+   b.y-player.y+canvas.height/2,
+   4,4
+  );
+  return !b.dead;
+ });
+
+ // MINIMAP
+ mctx.clearRect(0,0,150,150);
+ map.forEach((row,y)=>row.forEach((t,x)=>{
+  if(t){
+   mctx.fillStyle="gray";
+   mctx.fillRect(x*15,y*15,15,15);
+  }
+ }));
+ mctx.fillStyle="cyan";
+ mctx.fillRect(player.x/tile*15,player.y/tile*15,6,6);
+ enemies.forEach(e=>{
+  mctx.fillStyle="red";
+  mctx.fillRect(e.x/tile*15,e.y/tile*15,6,6);
+ });
+
+ requestAnimationFrame(update);
+}
+
+update();
+</script>
+</body>
+</html>
